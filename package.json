@@ -38,7 +38,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "REPLACE_WITH_GITHUB_USERNAME",
+      "owner": "s4vscalez",
       "repo": "laxorq-reception"
     }
   },
