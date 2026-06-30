@@ -1,0 +1,52 @@
+{
+  "name": "laxorq-reception",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Laxorq Reception — multi-tenant AI receptionist (WhatsApp, Email, Voice, Web chat). Reads inbound messages, holds a real conversation, captures and books leads, escalates hot ones, follows up. Feeds updates into Laxorq Automate.",
+  "author": "Laxorq",
+  "main": "electron/main.js",
+  "scripts": {
+    "start": "node server.js",
+    "app": "electron .",
+    "dist": "electron-builder",
+    "publish": "electron-builder --publish always"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "build": {
+    "appId": "sg.laxorq.reception",
+    "productName": "Laxorq Reception",
+    "files": [
+      "server.js",
+      "lib/**/*",
+      "public/**/*",
+      "electron/main.js",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "REPLACE_WITH_GITHUB_USERNAME",
+      "repo": "laxorq-reception"
+    }
+  },
+  "devDependencies": {
+    "electron": "^42.5.1",
+    "electron-builder": "^26.15.3"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  }
+}

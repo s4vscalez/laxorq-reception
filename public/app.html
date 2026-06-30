@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Laxorq Reception</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,wght@0,300;0,400;0,600;1,300;1,400&family=Outfit:wght@300;400;500;600&display=swap');
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --silver:#C2C2C2;--silver-light:#E0E0E0;--silver-dark:#888;--ink:#0D0D0D;
+    --green:#4CAF6E;--blue:#6495ED;--amber:#FFB74D;--purple:#BA68C8;--red:#E57373;
+    --fr:'Fraunces',Georgia,serif;--of:'Outfit',system-ui,sans-serif;
+    --line:rgba(194,194,194,.12);--panel:rgba(194,194,194,.05);
+  }
+  body{font-family:var(--of);background:var(--ink);color:var(--silver-light);min-height:100vh;}
+  body::before{content:'';position:fixed;inset:0;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");pointer-events:none;z-index:0;opacity:.5;}
+  .app{position:relative;z-index:1;display:flex;flex-direction:column;min-height:100vh;}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:14px 28px;border-bottom:.5px solid var(--line);background:rgba(13,13,13,.9);backdrop-filter:blur(12px);position:sticky;top:0;z-index:20;}
+  .logo{font-family:var(--fr);font-size:18px;font-weight:600;letter-spacing:-.5px;}
+  .logo span{color:var(--silver-dark);font-weight:300;font-style:italic;}
+  .topright{display:flex;gap:10px;align-items:center;}
+  select.pick,button.btn{font-family:var(--of);cursor:pointer;outline:none;}
+  select.pick{background:rgba(194,194,194,.07);border:.5px solid rgba(194,194,194,.18);border-radius:20px;padding:7px 14px;font-size:12px;color:var(--silver);}
+  select.pick option{background:#1a1a1a;}
+  .btn{background:rgba(194,194,194,.08);border:.5px solid rgba(194,194,194,.2);border-radius:8px;padding:8px 14px;font-size:12px;color:var(--silver-light);transition:.15s;}
+  .btn:hover{background:rgba(194,194,194,.15);}
+  .btn.primary{background:rgba(76,175,110,.18);border-color:rgba(76,175,110,.4);color:#bff5d3;}
+  .btn.primary:hover{background:rgba(76,175,110,.28);}
+  .btn.ghost{background:transparent;}
+  .main{display:flex;flex:1;}
+  .sidebar{width:210px;flex-shrink:0;padding:24px 16px;border-right:.5px solid rgba(194,194,194,.1);display:flex;flex-direction:column;gap:4px;}
+  .nav-label{font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--silver-dark);padding:8px 10px 4px;}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;font-size:13px;color:var(--silver-dark);cursor:pointer;transition:.15s;border:.5px solid transparent;}
+  .nav-item:hover{background:rgba(194,194,194,.07);color:var(--silver-light);}
+  .nav-item.active{background:rgba(194,194,194,.12);color:var(--silver-light);border-color:rgba(194,194,194,.15);}
+  .nav-count{margin-left:auto;font-size:10px;background:rgba(100,149,237,.15);color:var(--blue);border-radius:10px;padding:1px 7px;}
+  .content{flex:1;padding:28px 32px;overflow-y:auto;max-width:1100px;}
+  .page-title{font-family:var(--fr);font-size:26px;font-weight:400;letter-spacing:-.5px;}
+  .page-title em{font-style:italic;color:var(--silver-dark);}
+  .page-sub{font-size:13px;color:var(--silver-dark);margin-top:4px;margin-bottom:24px;}
+  .stat-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:28px;}
+  .stat-card{background:var(--panel);border:.5px solid var(--line);border-radius:12px;padding:16px 18px;}
+  .stat-label{font-size:11px;color:var(--silver-dark);margin-bottom:8px;}
+  .stat-value{font-family:var(--fr);font-size:28px;font-weight:300;line-height:1;}
+  .section-title{font-family:var(--fr);font-size:15px;margin-bottom:14px;}
+  .panel{background:var(--panel);border:.5px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:18px;}
+  .feed-item{display:flex;gap:10px;padding:9px 0;border-bottom:.5px solid rgba(194,194,194,.07);font-size:13px;}
+  .feed-item:last-child{border-bottom:none;}
+  .feed-dot{width:7px;height:7px;border-radius:50%;margin-top:5px;flex-shrink:0;background:var(--silver-dark);}
+  .feed-dot.lead{background:var(--green);}.feed-dot.booking{background:var(--blue);}.feed-dot.escalation{background:var(--amber);}.feed-dot.followup{background:var(--purple);}
+  .feed-time{margin-left:auto;font-size:11px;color:var(--silver-dark);white-space:nowrap;padding-left:10px;}
+  .convo-layout{display:grid;grid-template-columns:300px 1fr;gap:16px;}
+  .convo-list{display:flex;flex-direction:column;gap:6px;max-height:70vh;overflow-y:auto;}
+  .convo-row{background:var(--panel);border:.5px solid var(--line);border-radius:10px;padding:11px 13px;cursor:pointer;transition:.15s;}
+  .convo-row:hover{background:rgba(194,194,194,.1);}
+  .convo-row.active{border-color:rgba(194,194,194,.35);}
+  .convo-name{font-size:13px;font-weight:500;display:flex;align-items:center;gap:6px;}
+  .convo-meta{font-size:11px;color:var(--silver-dark);margin-top:3px;}
+  .pill{font-size:10px;padding:1px 7px;border-radius:10px;text-transform:capitalize;}
+  .pill.active{background:rgba(194,194,194,.12);color:var(--silver);}
+  .pill.booked{background:rgba(100,149,237,.15);color:var(--blue);}
+  .pill.escalated{background:rgba(255,183,77,.15);color:var(--amber);}
+  .pill.not_interested{background:rgba(229,115,115,.12);color:var(--red);}
+  .ch-pill{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--silver-dark);}
+  .transcript{background:var(--panel);border:.5px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;min-height:60vh;}
+  .tcap{display:flex;align-items:center;gap:10px;padding-bottom:12px;border-bottom:.5px solid var(--line);margin-bottom:12px;}
+  .tcap h3{font-family:var(--fr);font-weight:400;font-size:16px;}
+  .msgs{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:4px;max-height:48vh;}
+  .m{max-width:80%;padding:8px 12px;border-radius:14px;font-size:13px;line-height:1.45;white-space:pre-wrap;}
+  .m.user{align-self:flex-start;background:rgba(255,255,255,.06);border:.5px solid var(--line);}
+  .m.assistant{align-self:flex-end;background:rgba(76,175,110,.12);border:.5px solid rgba(76,175,110,.2);}
+  .m.human{align-self:flex-end;background:rgba(100,149,237,.14);border:.5px solid rgba(100,149,237,.25);}
+  .m .who{font-size:9px;color:var(--silver-dark);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px;}
+  .treply{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:.5px solid var(--line);}
+  .treply input{flex:1;background:rgba(194,194,194,.07);border:.5px solid rgba(194,194,194,.2);border-radius:18px;padding:9px 14px;color:var(--silver-light);font-family:inherit;font-size:13px;outline:none;}
+  label{display:block;font-size:12px;color:var(--silver-dark);margin:14px 0 5px;}
+  input.f,textarea.f,select.f{width:100%;background:rgba(194,194,194,.06);border:.5px solid rgba(194,194,194,.18);border-radius:8px;padding:9px 12px;color:var(--silver-light);font-family:inherit;font-size:13px;outline:none;}
+  input.f:focus,textarea.f:focus{border-color:rgba(194,194,194,.4);}
+  textarea.f{resize:vertical;min-height:64px;line-height:1.5;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;}
+  .save-bar{position:sticky;bottom:0;background:linear-gradient(transparent,var(--ink) 40%);padding:18px 0 4px;margin-top:18px;display:flex;gap:10px;align-items:center;}
+  .muted{font-size:12px;color:var(--silver-dark);line-height:1.6;}
+  .badge{font-size:10px;padding:2px 8px;border-radius:10px;background:rgba(255,183,77,.15);color:var(--amber);margin-left:8px;}
+  .badge.on{background:rgba(76,175,110,.15);color:var(--green);}
+  a.link{color:var(--blue);text-decoration:none;}
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1c1c1c;border:.5px solid var(--line);border-radius:10px;padding:11px 18px;font-size:13px;z-index:50;opacity:0;transition:.25s;pointer-events:none;}
+  .toast.show{opacity:1;}
+  .empty{color:var(--silver-dark);font-size:13px;padding:30px;text-align:center;}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">Laxorq <span>Reception</span></div>
+    <div class="topright">
+      <span id="ai-badge" class="badge">AI key not set</span>
+      <select class="pick" id="tenantPick"></select>
+      <a class="btn ghost" href="/chat" target="_blank">Open test chat ↗</a>
+    </div>
+  </div>
+  <div class="main">
+    <div class="sidebar">
+      <div class="nav-label">Workspace</div>
+      <div class="nav-item active" data-view="overview">📊 Overview</div>
+      <div class="nav-item" data-view="conversations">💬 Conversations <span class="nav-count" id="cvCount">0</span></div>
+      <div class="nav-item" data-view="receptionist">🪪 Receptionist</div>
+      <div class="nav-item" data-view="channels">🔌 Channels</div>
+      <div class="nav-label">System</div>
+      <div class="nav-item" data-view="settings">⚙️ Settings</div>
+      <div class="nav-item" data-view="newclient">＋ Add client</div>
+    </div>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+let TENANTS=[], TID=null, CURRENT=null, VIEW='overview', ACTIVE_CONVO=null;
+const $=s=>document.querySelector(s), C=$('#content');
+function toast(t){const el=$('#toast');el.textContent=t;el.classList.add('show');setTimeout(()=>el.classList.remove('show'),2200);}
+function ago(iso){if(!iso)return'';const s=(Date.now()-new Date(iso))/1000;if(s<60)return'just now';if(s<3600)return Math.floor(s/60)+'m';if(s<86400)return Math.floor(s/3600)+'h';return Math.floor(s/86400)+'d';}
+async function api(path,opts){const r=await fetch('/api'+path,opts);if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||r.status);return r.json();}
+
+async function boot(){
+  TENANTS=await api('/tenants');
+  if(!TENANTS.length){VIEW='newclient';renderTenantPick();return render();}
+  TID=TENANTS[0].id;
+  renderTenantPick();
+  await loadTenant();
+  render();
+}
+function renderTenantPick(){
+  $('#tenantPick').innerHTML=TENANTS.map(t=>`<option value="${t.id}" ${t.id==TID?'selected':''}>${t.name}</option>`).join('')||'<option>No clients yet</option>';
+}
+$('#tenantPick').onchange=async e=>{TID=Number(e.target.value);ACTIVE_CONVO=null;await loadTenant();render();};
+async function loadTenant(){ CURRENT=await api('/tenants/'+TID); }
+
+document.querySelectorAll('.nav-item').forEach(n=>n.onclick=()=>{
+  document.querySelectorAll('.nav-item').forEach(x=>x.classList.remove('active'));
+  n.classList.add('active');VIEW=n.dataset.view;render();
+});
+
+async function render(){
+  if(VIEW==='overview')return renderOverview();
+  if(VIEW==='conversations')return renderConversations();
+  if(VIEW==='receptionist')return renderReceptionist();
+  if(VIEW==='channels')return renderChannels();
+  if(VIEW==='settings')return renderSettings();
+  if(VIEW==='newclient')return renderNewClient();
+}
+
+// ---- OVERVIEW
+async function renderOverview(){
+  if(!TID){C.innerHTML='<div class="empty">Add a client to begin.</div>';return;}
+  const o=await api('/overview?tenant_id='+TID);
+  $('#ai-badge').textContent=o.ai_ready?'AI live':'AI key not set';
+  $('#ai-badge').className='badge'+(o.ai_ready?' on':'');
+  $('#cvCount').textContent=o.stats.conversations;
+  const s=o.stats;
+  C.innerHTML=`
+   <div class="page-title">Good to see you, <em>${CURRENT.name}</em></div>
+   <div class="page-sub">Your AI receptionist is on duty. Here is what it has been handling.</div>
+   <div class="stat-grid">
+     ${stat('Conversations',s.conversations)}${stat('Last 24h',s.today)}${stat('Leads captured',s.leads)}${stat('Bookings',s.booked)}${stat('Escalated to you',s.escalated)}
+   </div>
+   <div class="section-title">Live activity</div>
+   <div class="panel">${o.events.length?o.events.map(feedItem).join(''):'<div class="empty">No activity yet. Open the test chat and say hello.</div>'}</div>`;
+}
+const stat=(l,v)=>`<div class="stat-card"><div class="stat-label">${l}</div><div class="stat-value">${v}</div></div>`;
+const feedItem=e=>`<div class="feed-item"><div class="feed-dot ${e.type}"></div><div>${e.text}</div><div class="feed-time">${ago(e.created_at)}</div></div>`;
+
+// ---- CONVERSATIONS
+async function renderConversations(){
+  const rows=await api('/conversations?tenant_id='+TID);
+  $('#cvCount').textContent=rows.length;
+  C.innerHTML=`<div class="page-title">Conversations</div><div class="page-sub">Watch the receptionist work. Take over any chat to reply yourself.</div>
+   <div class="convo-layout"><div class="convo-list" id="clist">${rows.length?rows.map(convoRow).join(''):'<div class="empty">No conversations yet.</div>'}</div>
+   <div id="tpane"><div class="empty">Select a conversation to view the transcript.</div></div></div>`;
+  document.querySelectorAll('.convo-row').forEach(r=>r.onclick=()=>openConvo(Number(r.dataset.id)));
+  if(ACTIVE_CONVO)openConvo(ACTIVE_CONVO);
+}
+const convoRow=c=>`<div class="convo-row ${c.id==ACTIVE_CONVO?'active':''}" data-id="${c.id}">
+  <div class="convo-name">${c.contact_name||'Unknown'} ${c.ai_paused?'🙋':''}<span class="pill ${c.status}" style="margin-left:auto">${c.status.replace('_',' ')}</span></div>
+  <div class="convo-meta"><span class="ch-pill">${c.channel}</span> · ${ago(c.updated_at)} ${c.urgency?'· '+c.urgency:''}</div></div>`;
+
+async function openConvo(id){
+  ACTIVE_CONVO=id;
+  document.querySelectorAll('.convo-row').forEach(r=>r.classList.toggle('active',Number(r.dataset.id)===id));
+  const d=await api('/conversations/'+id);const c=d.conversation;
+  $('#tpane').innerHTML=`<div class="transcript">
+    <div class="tcap"><h3>${c.contact_name||'Unknown'}</h3><span class="pill ${c.status}">${c.status.replace('_',' ')}</span>
+      <button class="btn ${c.ai_paused?'primary':''}" id="toEl" style="margin-left:auto">${c.ai_paused?'▶ Resume AI':'⏸ Take over'}</button></div>
+    <div class="muted" style="margin-bottom:8px">${[c.contact_phone,c.contact_email,c.contact].filter(Boolean).join(' · ')}</div>
+    <div class="msgs" id="msgs">${d.messages.map(m=>`<div class="m ${m.role}"><div class="who">${m.role==='assistant'?'AI':m.role==='human'?'You':m.role}</div>${escapeHtml(m.text)}</div>`).join('')}</div>
+    <div class="treply"><input id="rin" placeholder="${c.ai_paused?'Type your reply…':'Take over first to reply manually'}" ${c.ai_paused?'':'disabled'}><button class="btn primary" id="rsend" ${c.ai_paused?'':'disabled'}>Send</button></div>
+  </div>`;
+  const msgs=$('#msgs');msgs.scrollTop=msgs.scrollHeight;
+  $('#toEl').onclick=async()=>{await api('/conversations/'+id+'/takeover',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({paused:!c.ai_paused})});openConvo(id);};
+  const sendManual=async()=>{const t=$('#rin').value.trim();if(!t)return;await api('/conversations/'+id+'/send',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({text:t})});$('#rin').value='';openConvo(id);};
+  if($('#rsend')){$('#rsend').onclick=sendManual;$('#rin').addEventListener('keydown',e=>{if(e.key==='Enter')sendManual();});}
+}
+function escapeHtml(s){return String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+// ---- RECEPTIONIST BUILDER
+function renderReceptionist(){
+  const c=CURRENT.config||{};
+  C.innerHTML=`<div class="page-title">Receptionist profile</div><div class="page-sub">This is the brain. Everything here shapes how the AI talks and what it knows about <em>${CURRENT.name}</em>.</div>
+   <div class="panel">
+     <div class="grid2"><div><label>Business name</label><input class="f" id="r_name" value="${attr(CURRENT.name)}"></div>
+     <div><label>Type of business</label><input class="f" id="r_niche" value="${attr(CURRENT.niche)}" placeholder="tuition centre"></div></div>
+     <label>About the business</label><textarea class="f" id="r_about">${esc2(c.about)}</textarea>
+     <label>Services offered</label><textarea class="f" id="r_services">${esc2(c.services)}</textarea>
+     <div class="grid2"><div><label>Opening hours</label><textarea class="f" id="r_hours">${esc2(c.hours)}</textarea></div>
+     <div><label>Location</label><textarea class="f" id="r_location">${esc2(c.location)}</textarea></div></div>
+     <label>Pricing guidance <span class="muted">(the AI never invents prices — give it ranges + rules)</span></label><textarea class="f" id="r_pricing">${esc2(c.pricing)}</textarea>
+     <label>Booking / next step</label><textarea class="f" id="r_booking">${esc2(c.booking)}</textarea>
+     <label>FAQ (one Q/A per line)</label><textarea class="f" id="r_faq" style="min-height:110px">${esc2(c.faq)}</textarea>
+     <label>Tone notes</label><textarea class="f" id="r_tone">${esc2(c.tone)}</textarea>
+     <div class="save-bar"><button class="btn primary" id="rsaveBtn">Save receptionist</button><span class="muted">Changes apply to new messages immediately.</span></div>
+   </div>`;
+  $('#rsaveBtn').onclick=async()=>{
+    const config={about:v('r_about'),services:v('r_services'),hours:v('r_hours'),location:v('r_location'),pricing:v('r_pricing'),booking:v('r_booking'),faq:v('r_faq'),tone:v('r_tone'),greeting:c.greeting||''};
+    CURRENT=await api('/tenants/'+TID,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({name:v('r_name'),niche:v('r_niche'),config})});
+    TENANTS=await api('/tenants');renderTenantPick();toast('Receptionist saved');
+  };
+}
+const v=id=>$('#'+id).value;
+const attr=s=>String(s||'').replace(/"/g,'&quot;');
+const esc2=s=>String(s||'').replace(/</g,'&lt;');
+
+// ---- CHANNELS
+function renderChannels(){
+  const ch=CURRENT.channels||{};
+  C.innerHTML=`<div class="page-title">Channels</div><div class="page-sub">Connect where leads come in. Each goes live the moment its keys are filled in.</div>
+   <div class="panel"><div class="section-title">Handoff & alerts <span class="badge on">how take-over works</span></div>
+     <div class="muted">The AI handles the chat. When it hits a hot lead, a booking, or a question it cannot answer, it captures everything then <strong>emails ${CURRENT.name} the lead, the full conversation, and a one-tap WhatsApp link to the customer</strong>, so they reply from their own phone. No login needed for them. (For this to send, set the shared SMTP under Settings.)</div>
+     <label>Client alert email (where handoffs are sent)</label><input class="f" id="c_owner" value="${attr(CURRENT.owner_email)}" placeholder="teacher@client.com"></div>
+
+   <div class="panel"><div class="section-title">Web chat <span class="badge on">live now</span></div>
+     <div class="muted">Works today, no setup. Embed this on ${CURRENT.name}'s site, or use the <a class="link" href="/chat" target="_blank">test chat</a>.</div>
+     <label>Embed snippet</label><textarea class="f" readonly onclick="this.select()">&lt;script src="${location.origin}/widget.js" data-tenant="${TID}"&gt;&lt;/script&gt;</textarea>
+     <div class="muted" style="margin-top:6px">(Widget loader ships in Phase 1 polish; the /chat page works right now.)</div></div>
+
+   <div class="panel"><div class="section-title">Link to Automate dashboard <span class="badge on">recommended</span></div>
+     <div class="muted">Captured leads & bookings get pushed into your existing Automate dashboard so clients see updates there.</div>
+     <div class="grid2"><div><label>Automate base URL</label><input class="f" id="c_aurl" value="${attr(CURRENT.automate_url)}" placeholder="http://localhost:4000"></div>
+     <div><label>Client form token</label><input class="f" id="c_atok" value="${attr(CURRENT.automate_token)}" placeholder="from Automate › client settings"></div></div></div>
+
+   <div class="panel"><div class="section-title">WhatsApp Business <span class="badge">Phase 1 · needs Meta setup</span></div>
+     <div class="muted">Meta Cloud API. Point your webhook to <code>${location.origin}/wh/whatsapp</code>. Needs a public HTTPS host.</div>
+     <div class="grid2"><div><label>Phone number ID</label><input class="f" id="c_wapnid" value="${attr(ch.whatsapp?.phone_number_id)}"></div>
+     <div><label>Access token</label><input class="f" id="c_watok" value="${attr(ch.whatsapp?.token)}" placeholder="permanent token"></div></div>
+     <label>Webhook verify token (you choose this)</label><input class="f" id="c_waver" value="${attr(ch.whatsapp?.verify_token)}"></div>
+
+   <div class="panel"><div class="section-title">Email <span class="badge">Phase 2</span></div>
+     <div class="muted">Inbound parsing posts to <code>${location.origin}/wh/email</code>. Outbound uses the shared SMTP in Settings.</div>
+     <label>Receptionist email address</label><input class="f" id="c_email" value="${attr(ch.email?.address)}" placeholder="enquiries@client.com"></div>
+
+   <div class="panel"><div class="section-title">Voice <span class="badge">Phase 3</span></div>
+     <div class="muted">A voice provider (Vapi / Retell) calls <code>${location.origin}/wh/voice</code> per turn.</div>
+     <label>Phone number</label><input class="f" id="c_voice" value="${attr(ch.voice?.phone_number)}" placeholder="+65…"></div>
+
+   <div class="save-bar"><button class="btn primary" id="csave">Save channels</button></div>`;
+  $('#csave').onclick=async()=>{
+    const channels={whatsapp:{phone_number_id:v('c_wapnid'),token:v('c_watok'),verify_token:v('c_waver')},email:{address:v('c_email')},voice:{phone_number:v('c_voice')}};
+    CURRENT=await api('/tenants/'+TID,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({owner_email:v('c_owner'),automate_url:v('c_aurl'),automate_token:v('c_atok'),channels})});
+    toast('Channels saved');
+  };
+}
+
+// ---- SETTINGS
+async function renderSettings(){
+  const s=await api('/settings');
+  C.innerHTML=`<div class="page-title">Settings</div><div class="page-sub">System-wide keys, shared across every client.</div>
+   <div class="panel"><div class="section-title">AI brain</div>
+     <label>Anthropic API key</label><input class="f" id="s_key" value="${attr(s.anthropic_api_key)}" placeholder="sk-ant-…">
+     <label>Conversation model</label><input class="f" id="s_model" value="${attr(s.chat_model)}"></div>
+   <div class="panel"><div class="section-title">Email sending (SMTP) <span class="muted">shared by Automate</span></div>
+     <div class="grid2"><div><label>Host</label><input class="f" id="s_host" value="${attr(s.smtp_host)}" placeholder="smtp.gmail.com"></div>
+     <div><label>Port</label><input class="f" id="s_port" value="${attr(s.smtp_port)}"></div></div>
+     <div class="grid2"><div><label>User</label><input class="f" id="s_user" value="${attr(s.smtp_user)}"></div>
+     <div><label>App password</label><input class="f" id="s_pass" value="${attr(s.smtp_pass)}" type="password"></div></div>
+     <label>From address</label><input class="f" id="s_from" value="${attr(s.smtp_from)}"></div>
+   <div class="save-bar"><button class="btn primary" id="ssave">Save settings</button></div>`;
+  $('#ssave').onclick=async()=>{
+    await api('/settings',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({anthropic_api_key:v('s_key'),chat_model:v('s_model'),smtp_host:v('s_host'),smtp_port:v('s_port'),smtp_user:v('s_user'),smtp_pass:v('s_pass'),smtp_from:v('s_from')})});
+    toast('Settings saved');renderOverview&&api('/overview?tenant_id='+TID).then(o=>{$('#ai-badge').textContent=o.ai_ready?'AI live':'AI key not set';$('#ai-badge').className='badge'+(o.ai_ready?' on':'');});
+  };
+}
+
+// ---- NEW CLIENT
+function renderNewClient(){
+  C.innerHTML=`<div class="page-title">Add a client</div><div class="page-sub">Spin up a new AI receptionist. You can fill in the details after.</div>
+   <div class="panel" style="max-width:520px">
+     <label>Business name</label><input class="f" id="n_name" placeholder="Acme Tuition">
+     <label>Type of business</label><input class="f" id="n_niche" placeholder="tuition centre">
+     <label>Owner email (for escalation alerts)</label><input class="f" id="n_email" placeholder="owner@acme.com">
+     <div class="save-bar"><button class="btn primary" id="ncreate">Create receptionist</button></div></div>`;
+  $('#ncreate').onclick=async()=>{
+    const name=v('n_name').trim();if(!name)return toast('Name required');
+    const t=await api('/tenants',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({name,niche:v('n_niche'),owner_email:v('n_email')})});
+    TENANTS=await api('/tenants');TID=t.id;await loadTenant();renderTenantPick();
+    document.querySelectorAll('.nav-item').forEach(x=>x.classList.toggle('active',x.dataset.view==='receptionist'));VIEW='receptionist';render();toast('Receptionist created');
+  };
+}
+boot();
+</script>
+</body>
+</html>
