@@ -104,6 +104,7 @@
       <div class="nav-label">Workspace</div>
       <div class="nav-item active" data-view="overview">📊 Overview</div>
       <div class="nav-item" data-view="conversations">💬 Conversations <span class="nav-count" id="cvCount">0</span></div>
+      <div class="nav-item" data-view="calendar">📅 Calendar</div>
       <div class="nav-item" data-view="receptionist">🪪 Receptionist</div>
       <div class="nav-item" data-view="channels">🔌 Channels</div>
       <div class="nav-label">System</div>
@@ -143,10 +144,44 @@ document.querySelectorAll('.nav-item').forEach(n=>n.onclick=()=>{
 async function render(){
   if(VIEW==='overview')return renderOverview();
   if(VIEW==='conversations')return renderConversations();
+  if(VIEW==='calendar')return renderCalendar();
   if(VIEW==='receptionist')return renderReceptionist();
   if(VIEW==='channels')return renderChannels();
   if(VIEW==='settings')return renderSettings();
   if(VIEW==='newclient')return renderNewClient();
+}
+
+// ---- CALENDAR
+async function renderCalendar(){
+  const rows=await api('/bookings?tenant_id='+TID);
+  const fmtDay=iso=>new Date(iso).toLocaleDateString('en-SG',{timeZone:'Asia/Singapore',weekday:'long',day:'numeric',month:'long'});
+  const fmtTime=iso=>new Date(iso).toLocaleTimeString('en-SG',{timeZone:'Asia/Singapore',hour:'2-digit',minute:'2-digit',hour12:true});
+  const timed=rows.filter(b=>b.start_at), untimed=rows.filter(b=>!b.start_at);
+  const byDay={};
+  timed.forEach(b=>{const k=fmtDay(b.start_at);(byDay[k]=byDay[k]||[]).push(b);});
+  const bookingRow=b=>`
+    <div class="feed-item" style="align-items:center">
+      <div style="min-width:86px;font-family:var(--fr);font-size:15px">${b.start_at?fmtTime(b.start_at):'—'}</div>
+      <div style="flex:1">
+        <div style="font-size:13px;font-weight:500">${b.title}</div>
+        <div class="convo-meta">${[b.customer_phone,b.customer_email].filter(Boolean).join(' · ')||''}${b.preferred_text&&!b.start_at?' · wants: '+b.preferred_text:''}</div>
+      </div>
+      ${b.invite_sent?'<span class="pill booked" title="Calendar invite emailed">✉ invited</span>':''}
+      <span class="pill ${b.status==='confirmed'?'booked':b.status==='pending'?'escalated':'not_interested'}">${b.status}</span>
+      <button class="btn ghost bk-x" data-id="${b.id}" title="Cancel booking" style="padding:4px 9px">✕</button>
+    </div>`;
+  C.innerHTML=`<div class="page-title">Calendar</div>
+   <div class="page-sub">Every booking the receptionist makes lands here. Confirmed slots also go out as email calendar invites (needs SMTP in Settings).</div>
+   ${Object.keys(byDay).length?Object.keys(byDay).map(day=>`
+     <div class="section-title" style="margin-top:18px">${day}</div>
+     <div class="panel">${byDay[day].map(bookingRow).join('')}</div>`).join(''):''}
+   ${untimed.length?`<div class="section-title" style="margin-top:18px">Awaiting a confirmed time</div>
+     <div class="panel">${untimed.map(bookingRow).join('')}</div>`:''}
+   ${!rows.length?'<div class="empty">No upcoming bookings yet. When the receptionist books a slot, it appears here and an invite is emailed.</div>':''}`;
+  document.querySelectorAll('.bk-x').forEach(x=>x.onclick=async()=>{
+    await api('/bookings/'+x.dataset.id,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({status:'cancelled'})});
+    renderCalendar();toast('Booking cancelled');
+  });
 }
 
 // ---- OVERVIEW

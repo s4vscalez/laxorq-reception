@@ -14,6 +14,8 @@ const { DatabaseSync } = require('node:sqlite');
 
 const brain = require('./lib/brain');
 const automate = require('./lib/automate');
+const icsLib = require('./lib/ics');
+const { sendEmail } = require('./lib/smtp');
 const waCh = require('./lib/channels/whatsapp');
 const emailCh = require('./lib/channels/email');
 const voiceCh = require('./lib/channels/voice');
@@ -118,6 +120,22 @@ db.exec(`
     due_at TEXT NOT NULL,
     reason TEXT DEFAULT '',
     status TEXT DEFAULT 'scheduled',   -- scheduled | sent | cancelled
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS bookings (
+    id INTEGER PRIMARY KEY,
+    tenant_id INTEGER NOT NULL,
+    conversation_id INTEGER,
+    title TEXT NOT NULL,
+    customer_name TEXT DEFAULT '',
+    customer_phone TEXT DEFAULT '',
+    customer_email TEXT DEFAULT '',
+    start_at TEXT,                     -- ISO UTC; NULL = time not pinned yet
+    end_at TEXT,
+    preferred_text TEXT DEFAULT '',    -- customer's own words when no concrete time
+    notes TEXT DEFAULT '',
+    status TEXT DEFAULT 'pending',     -- pending (team to confirm) | confirmed | cancelled
+    invite_sent INTEGER DEFAULT 0,
     created_at TEXT NOT NULL
   );
   CREATE TABLE IF NOT EXISTS settings (
@@ -250,15 +268,68 @@ function executorsFor(tenant, convo) {
     },
     request_booking: async (input) => {
       db.prepare("UPDATE conversations SET status='booked', updated_at=? WHERE id=?").run(now(), convo.id);
-      addEvent(tenant.id, convo.id, 'booking', `<strong>Booking requested:</strong> ${esc(input.service || 'service')}${input.preferred_time ? ' — ' + esc(input.preferred_time) : ''}`);
       const fresh = convoById(convo.id);
+
+      // Concrete time? -> real calendar entry + invites. Vague? -> pending, team confirms.
+      let startAt = null, endAt = null;
+      if (input.start_iso) {
+        const d = new Date(input.start_iso);
+        if (!isNaN(d) && d.getTime() > Date.now() - 60000) {
+          startAt = d.toISOString();
+          endAt = new Date(d.getTime() + (Number(input.duration_minutes) || 60) * 60000).toISOString();
+        }
+      }
+      const title = `${input.service || 'Appointment'} — ${fresh.contact_name || 'Customer'} (${tenant.name})`;
+      const r = db.prepare(
+        'INSERT INTO bookings (tenant_id, conversation_id, title, customer_name, customer_phone, customer_email, start_at, end_at, preferred_text, notes, status, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
+      ).run(tenant.id, convo.id, title, fresh.contact_name || '', fresh.contact_phone || '', fresh.contact_email || '',
+        startAt, endAt, input.preferred_time || '', input.notes || '', startAt ? 'confirmed' : 'pending', now());
+      const bookingId = Number(r.lastInsertRowid);
+
+      const when = startAt
+        ? new Date(startAt).toLocaleString('en-SG', { timeZone: 'Asia/Singapore', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
+        : (input.preferred_time || 'time to confirm');
+      addEvent(tenant.id, convo.id, 'booking', `<strong>Booking ${startAt ? 'confirmed' : 'requested'}:</strong> ${esc(input.service || 'service')} — ${esc(when)}`);
+
+      // Calendar invites (needs a concrete time + SMTP). Sent to the business owner and,
+      // if we have their email, the customer too.
+      let inviteNote = '';
+      if (startAt && smtpCfg()) {
+        const { ics } = icsLib.buildInvite({
+          title,
+          description: `Booked via the AI receptionist.\n${input.notes || ''}\nCustomer: ${fresh.contact_name || ''} ${fresh.contact_phone || ''}`.trim(),
+          start: startAt, end: endAt,
+          organizerName: tenant.name, organizerEmail: getSetting('smtp_from') || getSetting('smtp_user'),
+          attendees: [
+            { name: tenant.name, email: tenant.owner_email },
+            { name: fresh.contact_name, email: fresh.contact_email },
+          ],
+        });
+        const bodyTxt = `${title}\nWhen: ${when} (Singapore time)\n\nThis calendar invite was created automatically by your AI receptionist.`;
+        const targets = [tenant.owner_email, fresh.contact_email].filter(Boolean);
+        for (const to of targets) {
+          try {
+            await sendEmail(smtpCfg(), { to, subject: `Invite: ${title}`, body: bodyTxt, ics });
+            db.prepare('UPDATE bookings SET invite_sent=1 WHERE id=?').run(bookingId);
+            addEvent(tenant.id, convo.id, 'booking', `<strong>Calendar invite sent</strong> to ${esc(to)}`);
+          } catch (e) { console.error('invite send:', e.message); }
+        }
+        const sent = db.prepare('SELECT invite_sent FROM bookings WHERE id=?').get(bookingId).invite_sent;
+        inviteNote = sent ? ' A calendar invite has been emailed.' : '';
+      } else if (startAt && !smtpCfg()) {
+        addEvent(tenant.id, convo.id, 'system', 'Booking has a confirmed time but no SMTP is set — calendar invite not emailed (Settings).');
+      }
+
       await automate.pushLead(tenant, {
         name: fresh.contact_name, email: fresh.contact_email, phone: fresh.contact_phone,
-        message: `[BOOKING via AI Receptionist] ${input.service || ''} ${input.preferred_time || ''} ${input.notes || ''}`.trim(),
+        message: `[BOOKING via AI Receptionist] ${input.service || ''} ${when} ${input.notes || ''}`.trim(),
         source: 'reception-booking',
       });
-      await handoffToClient(tenant, convo, { kind: 'booking', reason: `Wants to book ${input.service || ''} ${input.preferred_time || ''}`.trim() });
-      return 'Booking request recorded. Tell the customer the team will confirm the exact slot shortly.';
+      await handoffToClient(tenant, convo, { kind: 'booking', reason: `Wants to book ${input.service || ''} — ${when}`.trim() });
+
+      return startAt
+        ? `Booking confirmed for ${when} Singapore time and recorded on the calendar.${inviteNote} Let the customer know it is locked in.`
+        : 'Booking request recorded without a fixed time. Tell the customer the team will confirm the exact slot shortly.';
     },
     escalate_to_human: async (input) => {
       db.prepare("UPDATE conversations SET status='escalated', updated_at=? WHERE id=?").run(now(), convo.id);
@@ -567,6 +638,24 @@ const server = http.createServer(async (req, res) => {
           events,
           ai_ready: !!apiKey(),
         });
+      }
+
+      if (req.method === 'GET' && p === '/api/bookings') {
+        const tid = Number(url.searchParams.get('tenant_id'));
+        const rows = db.prepare(
+          "SELECT * FROM bookings WHERE tenant_id=? AND status!='cancelled' AND (start_at IS NULL OR start_at >= ?) ORDER BY start_at IS NULL, start_at ASC LIMIT 200"
+        ).all(tid, new Date(Date.now() - 2 * 3600 * 1000).toISOString());
+        return send(res, 200, rows);
+      }
+
+      if (req.method === 'PATCH' && p.match(/^\/api\/bookings\/\d+$/)) {
+        const id = Number(p.split('/').pop());
+        const b = await readBody(req);
+        const bk = db.prepare('SELECT * FROM bookings WHERE id=?').get(id);
+        if (!bk) return send(res, 404, { error: 'no such booking' });
+        if (b.status && ['pending', 'confirmed', 'cancelled'].includes(b.status))
+          db.prepare('UPDATE bookings SET status=? WHERE id=?').run(b.status, id);
+        return send(res, 200, { ok: true });
       }
 
       if (req.method === 'GET' && p === '/api/conversations') {
