@@ -97,6 +97,16 @@ Open it any time from the app menu: **Reception → Open data folder**.
   for a name + WhatsApp/email so the lead can be followed up if the chat drops. This is why the
   simulator asks — it is the one channel where we genuinely don't know who they are.
 
+## Connecting a client's email inbox (v0.3.0+, easiest channel to go live)
+
+Channels → Email: enter the client's enquiry address + a **Gmail app password**
+(myaccount.google.com/apppasswords, requires 2-step verification). From then on the
+receptionist polls that real inbox every 60 seconds, replies to new enquiries **from the
+client's own address**, marks handled mail read, and escalates what needs a human. Calendar
+invites and handoff emails also send from the client's address once connected. Auto-replies,
+bounces, and calendar RSVPs are filtered out so it never loops. Non-Gmail IMAP servers work
+by setting `imap_host` / `smtp_host` in the tenant's email channel config.
+
 ## Connecting a client's WhatsApp (the real onboarding)
 
 There is no way to "just type a number and connect" — WhatsApp (Meta) does not allow plugging

@@ -287,9 +287,11 @@ function renderChannels(){
      <div><label>Access token</label><input class="f" id="c_watok" value="${attr(ch.whatsapp?.token)}" placeholder="permanent token"></div></div>
      <label>Webhook verify token (you choose this)</label><input class="f" id="c_waver" value="${attr(ch.whatsapp?.verify_token)}"></div>
 
-   <div class="panel"><div class="section-title">Email <span class="badge">Phase 2</span></div>
-     <div class="muted">Inbound parsing posts to <code>${location.origin}/wh/email</code>. Outbound uses the shared SMTP in Settings.</div>
-     <label>Receptionist email address</label><input class="f" id="c_email" value="${attr(ch.email?.address)}" placeholder="enquiries@client.com"></div>
+   <div class="panel"><div class="section-title">Email — connect the client's inbox ${ch.email?.app_password?'<span class="badge on">connected</span>':'<span class="badge">2 fields to go live</span>'}</div>
+     <div class="muted">Give it the client's enquiry address and a <strong>Gmail app password</strong> and the receptionist watches that real inbox: it reads each new enquiry, replies <strong>from the client's own address</strong>, marks it read, and escalates the ones that need a human. Create the app password at <a class="link" href="https://myaccount.google.com/apppasswords" target="_blank">myaccount.google.com/apppasswords</a> (needs 2-step verification on).</div>
+     <div class="grid2"><div><label>Email address</label><input class="f" id="c_email" value="${attr(ch.email?.address)}" placeholder="enquiries@client.com"></div>
+     <div><label>App password</label><input class="f" id="c_epass" type="password" value="${attr(ch.email?.app_password)}" placeholder="16 characters from Google"></div></div>
+     <div class="muted" style="margin-top:6px">Non-Gmail inboxes work too — tell me and I'll set the IMAP/SMTP hosts. Advanced: inbound-parse webhooks can also POST to <code>${location.origin}/wh/email</code>.</div></div>
 
    <div class="panel"><div class="section-title">Voice <span class="badge">Phase 3</span></div>
      <div class="muted">A voice provider (Vapi / Retell) calls <code>${location.origin}/wh/voice</code> per turn.</div>
@@ -297,7 +299,7 @@ function renderChannels(){
 
    <div class="save-bar"><button class="btn primary" id="csave">Save channels</button></div>`;
   $('#csave').onclick=async()=>{
-    const channels={whatsapp:{phone_number_id:v('c_wapnid'),token:v('c_watok'),verify_token:v('c_waver')},email:{address:v('c_email')},voice:{phone_number:v('c_voice')}};
+    const channels={whatsapp:{phone_number_id:v('c_wapnid'),token:v('c_watok'),verify_token:v('c_waver')},email:{address:v('c_email'),app_password:v('c_epass')},voice:{phone_number:v('c_voice')}};
     CURRENT=await api('/tenants/'+TID,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify({owner_email:v('c_owner'),automate_url:v('c_aurl'),automate_token:v('c_atok'),channels})});
     toast('Channels saved');
   };

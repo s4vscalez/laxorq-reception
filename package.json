@@ -1,6 +1,6 @@
 {
   "name": "laxorq-reception",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "description": "Laxorq Reception — multi-tenant AI receptionist (WhatsApp, Email, Voice, Web chat). Reads inbound messages, holds a real conversation, captures and books leads, escalates hot ones, follows up. Feeds updates into Laxorq Automate.",
   "author": "Laxorq",

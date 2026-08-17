@@ -16,6 +16,7 @@ const brain = require('./lib/brain');
 const automate = require('./lib/automate');
 const icsLib = require('./lib/ics');
 const { sendEmail } = require('./lib/smtp');
+const imap = require('./lib/imap');
 const waCh = require('./lib/channels/whatsapp');
 const emailCh = require('./lib/channels/email');
 const voiceCh = require('./lib/channels/voice');
@@ -191,6 +192,26 @@ function smtpCfg() {
   return cfg.host && cfg.user && cfg.pass ? cfg : null;
 }
 
+// A tenant with a connected inbox (address + app password) sends AS the client,
+// from the client's own address. Falls back to the shared SMTP in Settings.
+function tenantEmailCfg(tenant) {
+  try {
+    const e = JSON.parse(tenant.channels_json || '{}').email || {};
+    if (!e.address || !e.app_password) return null;
+    return {
+      address: e.address.trim().toLowerCase(),
+      pass: String(e.app_password).replace(/\s+/g, ''),
+      imapHost: e.imap_host || 'imap.gmail.com',
+      smtpHost: e.smtp_host || 'smtp.gmail.com',
+    };
+  } catch { return null; }
+}
+function mailerFor(tenant) {
+  const e = tenantEmailCfg(tenant);
+  if (e) return { host: e.smtpHost, port: 465, user: e.address, pass: e.pass, from: e.address };
+  return smtpCfg();
+}
+
 function addEvent(tenantId, convoId, type, text) {
   db.prepare('INSERT INTO events (tenant_id, conversation_id, type, text, created_at) VALUES (?,?,?,?,?)')
     .run(tenantId, convoId, type, text, now());
@@ -294,12 +315,12 @@ function executorsFor(tenant, convo) {
       // Calendar invites (needs a concrete time + SMTP). Sent to the business owner and,
       // if we have their email, the customer too.
       let inviteNote = '';
-      if (startAt && smtpCfg()) {
+      if (startAt && mailerFor(tenant)) {
         const { ics } = icsLib.buildInvite({
           title,
           description: `Booked via the AI receptionist.\n${input.notes || ''}\nCustomer: ${fresh.contact_name || ''} ${fresh.contact_phone || ''}`.trim(),
           start: startAt, end: endAt,
-          organizerName: tenant.name, organizerEmail: getSetting('smtp_from') || getSetting('smtp_user'),
+          organizerName: tenant.name, organizerEmail: mailerFor(tenant).from,
           attendees: [
             { name: tenant.name, email: tenant.owner_email },
             { name: fresh.contact_name, email: fresh.contact_email },
@@ -309,15 +330,15 @@ function executorsFor(tenant, convo) {
         const targets = [tenant.owner_email, fresh.contact_email].filter(Boolean);
         for (const to of targets) {
           try {
-            await sendEmail(smtpCfg(), { to, subject: `Invite: ${title}`, body: bodyTxt, ics });
+            await sendEmail(mailerFor(tenant), { to, subject: `Invite: ${title}`, body: bodyTxt, ics });
             db.prepare('UPDATE bookings SET invite_sent=1 WHERE id=?').run(bookingId);
             addEvent(tenant.id, convo.id, 'booking', `<strong>Calendar invite sent</strong> to ${esc(to)}`);
           } catch (e) { console.error('invite send:', e.message); }
         }
         const sent = db.prepare('SELECT invite_sent FROM bookings WHERE id=?').get(bookingId).invite_sent;
         inviteNote = sent ? ' A calendar invite has been emailed.' : '';
-      } else if (startAt && !smtpCfg()) {
-        addEvent(tenant.id, convo.id, 'system', 'Booking has a confirmed time but no SMTP is set — calendar invite not emailed (Settings).');
+      } else if (startAt && !mailerFor(tenant)) {
+        addEvent(tenant.id, convo.id, 'system', 'Booking has a confirmed time but no email sender is set — connect the client inbox (Channels) or SMTP (Settings) to email invites.');
       }
 
       await automate.pushLead(tenant, {
@@ -396,12 +417,12 @@ async function handoffToClient(tenant, convo, { kind, reason }) {
   addEvent(tenant.id, convo.id, kind === 'booking' ? 'booking' : 'escalation',
     `<strong>Handoff sent to ${esc(tenant.owner_email || 'the client')}</strong>${wa ? ' with a one-tap WhatsApp reply' : ''}`);
 
-  const cfg = smtpCfg();
+  const cfg = mailerFor(tenant);
   if (cfg && tenant.owner_email) {
     try { await emailCh.send(cfg, tenant.owner_email, subject, body); }
     catch (e) { console.error('handoff email:', e.message); addEvent(tenant.id, convo.id, 'system', 'Handoff email failed: ' + esc(e.message)); }
   } else {
-    addEvent(tenant.id, convo.id, 'system', 'Handoff ready, but set a notification email + SMTP (Channels / Settings) so the client actually gets pinged');
+    addEvent(tenant.id, convo.id, 'system', 'Handoff ready, but connect the client inbox (Channels) or set SMTP (Settings) so the client actually gets pinged');
   }
 }
 
@@ -447,8 +468,8 @@ async function deliver(convo, tenant, text) {
   try {
     if (convo.channel === 'whatsapp' && ch.whatsapp) { await waCh.send(ch.whatsapp, convo.contact, text); return true; }
     if (convo.channel === 'email') {
-      const cfg = smtpCfg();
-      if (cfg && convo.contact_email) { await emailCh.send(cfg, convo.contact_email || convo.contact, 'Re: your enquiry', text); return true; }
+      const cfg = mailerFor(tenant);
+      if (cfg && (convo.contact_email || convo.contact)) { await emailCh.send(cfg, convo.contact_email || convo.contact, 'Re: your enquiry', text); return true; }
     }
   } catch (e) { console.error('deliver failed:', e.message); }
   return false; // webchat / voice have no async push channel — message is logged for the dashboard
@@ -476,6 +497,64 @@ async function tick() {
 }
 setInterval(() => tick().catch(e => console.error('tick:', e.message)), 30000);
 
+// ---------------------------------------------------------------- INBOX POLLING
+// Tenants with a connected inbox (Channels -> Email: address + app password) get
+// their new mail read every 60s. Each new enquiry runs through the same brain as
+// every other channel, and the reply is sent FROM the client's own address.
+const inboxState = new Map(); // tenant_id -> { busy, lastError, announced }
+
+function skippableSender(from, subject, self) {
+  if (!from || from === self) return true;
+  if (/no-?reply|donotreply|mailer-daemon|postmaster|notification|calendar-notification|bounce/i.test(from)) return true;
+  if (/^(accepted|declined|tentative|automatic reply|auto:|out of office)/i.test(subject || '')) return true;
+  return false;
+}
+
+async function pollTenantInbox(tenant) {
+  const cfg = tenantEmailCfg(tenant);
+  if (!cfg) return;
+  const st = inboxState.get(tenant.id) || {};
+  if (st.busy) return;
+  st.busy = true; inboxState.set(tenant.id, st);
+  try {
+    const msgs = await imap.pollInbox({ host: cfg.imapHost, user: cfg.address, pass: cfg.pass, limit: 5 });
+    if (!st.announced) {
+      st.announced = true;
+      addEvent(tenant.id, null, 'system', `<strong>Inbox connected:</strong> watching ${esc(cfg.address)} for new enquiries`);
+    }
+    st.lastError = '';
+    for (const m of msgs) {
+      if (skippableSender(m.from, m.subject, cfg.address)) continue;
+      if (!m.text && !m.subject) continue;
+      const reply = await handleInbound({
+        tenant, channel: 'email', contact: m.from, name: m.name,
+        text: `${m.subject ? m.subject + '\n\n' : ''}${m.text}`.slice(0, 4000),
+      });
+      const convo = db.prepare("SELECT * FROM conversations WHERE tenant_id=? AND channel='email' AND contact=? ORDER BY id DESC LIMIT 1").get(tenant.id, m.from);
+      if (convo && !convo.contact_email) db.prepare('UPDATE conversations SET contact_email=? WHERE id=?').run(m.from, convo.id);
+      if (reply) {
+        try {
+          await emailCh.send(mailerFor(tenant), m.from, 'Re: ' + (m.subject || 'your enquiry'), reply);
+          addEvent(tenant.id, convo?.id, 'msg', `<strong>Email reply sent</strong> to ${esc(m.name || m.from)} from ${esc(cfg.address)}`);
+        } catch (e) { addEvent(tenant.id, convo?.id, 'system', 'Email reply failed: ' + esc(e.message)); }
+      }
+    }
+  } catch (e) {
+    if (st.lastError !== e.message) { // log each distinct error once, not every 60s
+      st.lastError = e.message;
+      addEvent(tenant.id, null, 'system', `Inbox check failed for ${esc(cfg.address)}: ${esc(e.message)}`);
+    }
+  } finally {
+    st.busy = false;
+  }
+}
+
+setInterval(() => {
+  for (const t of db.prepare('SELECT * FROM tenants WHERE active=1').all()) {
+    pollTenantInbox(t).catch(e => console.error('inbox poll:', e.message));
+  }
+}, 60000);
+
 // ---------------------------------------------------------------- HTTP
 function send(res, code, data, headers = {}) {
   const isStr = typeof data === 'string';
@@ -499,7 +578,7 @@ function tenantPublic(t) {
 }
 function redactChannels(json) {
   const ch = JSON.parse(json || '{}');
-  for (const k of Object.keys(ch)) for (const f of ['token', 'secret', 'inbound_secret']) if (ch[k] && ch[k][f]) ch[k][f] = '••••••';
+  for (const k of Object.keys(ch)) for (const f of ['token', 'secret', 'inbound_secret', 'app_password']) if (ch[k] && ch[k][f]) ch[k][f] = '••••••';
   return ch;
 }
 
@@ -569,7 +648,7 @@ const server = http.createServer(async (req, res) => {
       const reply = await handleInbound({ tenant: t, channel: 'email', contact: m.from, name: m.name, text: `${m.subject ? m.subject + '\n\n' : ''}${m.text}` });
       const convo = db.prepare("SELECT * FROM conversations WHERE tenant_id=? AND channel='email' AND contact=? ORDER BY id DESC LIMIT 1").get(t.id, m.from);
       if (convo && !convo.contact_email) db.prepare('UPDATE conversations SET contact_email=? WHERE id=?').run(m.from, convo.id);
-      if (reply && smtpCfg()) await emailCh.send(smtpCfg(), m.from, 'Re: ' + (m.subject || 'your enquiry'), reply);
+      if (reply && mailerFor(t)) await emailCh.send(mailerFor(t), m.from, 'Re: ' + (m.subject || 'your enquiry'), reply);
       return send(res, 200, { ok: true });
     }
 
@@ -613,7 +692,7 @@ const server = http.createServer(async (req, res) => {
           if (b.channels) {
             for (const k of Object.keys(b.channels)) {
               channels[k] = { ...(channels[k] || {}), ...b.channels[k] };
-              for (const f of ['token', 'secret', 'inbound_secret']) if (channels[k][f] === '••••••') channels[k][f] = (JSON.parse(t.channels_json || '{}')[k] || {})[f] || '';
+              for (const f of ['token', 'secret', 'inbound_secret', 'app_password']) if (channels[k][f] === '••••••') channels[k][f] = (JSON.parse(t.channels_json || '{}')[k] || {})[f] || '';
             }
           }
           db.prepare('UPDATE tenants SET name=?, niche=?, config_json=?, channels_json=?, automate_url=?, automate_token=?, owner_email=?, active=? WHERE id=?')
